@@ -1,0 +1,63 @@
+name: Sync upstream
+
+# master 保持为上游的纯镜像（只做 fast-forward），本分支只放这个 workflow。
+# 有新提交时触发上游自带的 devel.yml 在 master 上构建。
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Build even if upstream has no new commits'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://github.com/GloriousEggroll/proton-ge-custom.git
+  BRANCH: master
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+          # GITHUB_TOKEN 无法推送修改 .github/workflows 的提交；
+          # 配置 SYNC_TOKEN（带 workflow 权限的 PAT）后可避免同步失败。
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Sync with upstream
+        id: sync
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch upstream "$BRANCH" --tags --force
+          before=$(git rev-parse HEAD)
+          git merge --ff-only "upstream/$BRANCH"
+          after=$(git rev-parse HEAD)
+          if [ "$before" != "$after" ]; then
+            git push origin "HEAD:$BRANCH"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Synced $before -> $after" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already up to date ($after)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          git push origin --tags
+
+      - name: Trigger build
+        if: steps.sync.outputs.changed == 'true' || inputs.force_build
+        run: gh workflow run devel.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+        env:
+          GH_TOKEN: ${{ github.token }}
