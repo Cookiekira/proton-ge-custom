@@ -1,7 +1,7 @@
 name: Sync upstream
 
 # master 保持为上游的纯镜像（只做 fast-forward），本分支只放这个 workflow。
-# 有新提交时触发上游自带的 devel.yml 在 master 上构建。
+# 有新提交时在本 workflow 里构建 master 并发布 Release。
 
 on:
   schedule:
@@ -28,6 +28,9 @@ env:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      sha: ${{ steps.sync.outputs.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -46,6 +49,7 @@ jobs:
           before=$(git rev-parse HEAD)
           git merge --ff-only "upstream/$BRANCH"
           after=$(git rev-parse HEAD)
+          echo "sha=$after" >> "$GITHUB_OUTPUT"
           if [ "$before" != "$after" ]; then
             git push origin "HEAD:$BRANCH"
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -56,8 +60,97 @@ jobs:
           fi
           git push origin --tags
 
-      - name: Trigger build
-        if: steps.sync.outputs.changed == 'true' || inputs.force_build
-        run: gh workflow run devel.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+
+  build:
+    needs: sync
+    if: needs.sync.outputs.changed == 'true' || inputs.force_build
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Cleanup disk space
+        uses: endersonmenezes/free-disk-space@v3
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+          remove_codeql: true
+          remove_docker_images: true
+          remove_swap: true
+          remove_packages: |
+            azure-cli google-cloud-cli google-chrome-stable firefox microsoft-edge-stable
+            postgresql* mysql* php* temurin-* *llvm* clang* mono-devel powershell dotnet-sdk-*
+          remove_folders: |
+            /usr/share/swift /usr/share/miniconda /usr/local/lib/node_modules
+            /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia*
+            /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle /usr/share/az*
+            /usr/local/.ghcup
+
+      - name: Prepare host
+        run: sudo apt-get update && sudo apt-get install -y ccache fontforge-nox
+
+      - name: Restore cache
+        id: ccache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.ccache
+          key: ccache-proton-${{ github.run_id }}
+          restore-keys: |
+            ccache-proton
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync.outputs.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: false
+
+      - name: Version
+        id: version
+        run: echo "name=$(git describe --long --tags)" >> "$GITHUB_OUTPUT"
+
+      - name: Patch
+        run: |
+          git submodule update --init --filter=tree:0 --recursive
+          ./patches/protonprep-valve-staging.sh || true
+          # strip binaries at compile time to save space in the runner
+          if [ -f ./.github/patches/0001-build-strip-binaries-early.patch ]; then
+            patch -Np1 -i ./.github/patches/0001-build-strip-binaries-early.patch
+          fi
+          mkdir ./build
+
+      - name: Configure
+        working-directory: ./build
+        run: ../configure.sh --build-name=${{ steps.version.outputs.name }} --container-engine=docker
+
+      - name: Make
+        working-directory: ./build
+        run: make -j$(nproc) redist
+
+      - name: Save cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: |
+            ./build/${{ steps.version.outputs.name }}.tar.gz
+            ./build/${{ steps.version.outputs.name }}.sha512sum
+
+      - name: Publish release
+        working-directory: ./build
         env:
           GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.version.outputs.name }}
+          SHA: ${{ needs.sync.outputs.sha }}
+        run: |
+          gh release create "$NAME" "$NAME.tar.gz" "$NAME.sha512sum" \
+            --repo "$GITHUB_REPOSITORY" --target "$SHA" --latest \
+            --title "$NAME" --notes "Automated build of upstream master @ $SHA" \
+            || gh release upload "$NAME" "$NAME.tar.gz" "$NAME.sha512sum" --repo "$GITHUB_REPOSITORY" --clobber
