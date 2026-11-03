@@ -7,7 +7,7 @@ name: Sync upstream
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       force_build:
