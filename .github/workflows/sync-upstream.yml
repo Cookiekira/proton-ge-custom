@@ -1,7 +1,7 @@
 name: Sync upstream
 
-# master 保持为上游的纯镜像（只做 fast-forward），本分支只放这个 workflow。
-# 有新提交时在本 workflow 里构建 master 并发布 Release。
+# Keeps master as a pure fast-forward mirror of upstream; this branch only holds this workflow.
+# When upstream has new commits, builds master here and publishes a GitHub release.
 
 on:
   schedule:
@@ -37,8 +37,8 @@ jobs:
         with:
           ref: ${{ env.BRANCH }}
           fetch-depth: 0
-          # GITHUB_TOKEN 无法推送修改 .github/workflows 的提交；
-          # 配置 SYNC_TOKEN（带 workflow 权限的 PAT）后可避免同步失败。
+          # GITHUB_TOKEN cannot push commits that touch .github/workflows.
+          # Set SYNC_TOKEN (a PAT with workflow scope) to avoid sync failures in that case.
           token: ${{ secrets.SYNC_TOKEN || github.token }}
 
       - name: Sync with upstream
