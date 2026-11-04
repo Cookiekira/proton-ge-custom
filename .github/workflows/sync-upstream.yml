@@ -69,24 +69,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Cleanup disk space
-        uses: endersonmenezes/free-disk-space@v3
-        with:
-          remove_android: true
-          remove_dotnet: true
-          remove_haskell: true
-          remove_tool_cache: true
-          remove_codeql: true
-          remove_docker_images: true
-          remove_swap: true
-          remove_packages: |
-            azure-cli google-cloud-cli google-chrome-stable firefox microsoft-edge-stable
-            postgresql* mysql* php* temurin-* *llvm* clang* mono-devel powershell dotnet-sdk-*
-          remove_folders: |
-            /usr/share/swift /usr/share/miniconda /usr/local/lib/node_modules
-            /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia*
-            /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle /usr/share/az*
-            /usr/local/.ghcup
+      - name: Free disk space
+        run: |
+          # The build needs ~28 GB (sources, build tree, SDK image, ccache).
+          # Delete preinstalled toolchains, fastest per GB first, until enough is free.
+          need_gb=40
+          avail_gb() { df --output=avail -BG / | tail -1 | tr -dc 0-9; }
+          echo "Available: $(avail_gb) GB"
+          for dir in /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache /usr/share/dotnet \
+                     /usr/local/lib/android /opt/microsoft /opt/google /usr/local/share/chromium; do
+            [ "$(avail_gb)" -ge "$need_gb" ] && break
+            [ -d "$dir" ] || continue
+            start=$SECONDS
+            sudo rm -rf "$dir"
+            echo "Removed $dir in $((SECONDS - start))s, available: $(avail_gb) GB"
+          done
+          if [ "$(avail_gb)" -lt "$need_gb" ]; then
+            docker image prune -af > /dev/null
+            echo "Pruned docker images, available: $(avail_gb) GB"
+          fi
 
       - name: Prepare host
         run: sudo apt-get update && sudo apt-get install -y ccache fontforge-nox
@@ -137,6 +138,12 @@ jobs:
       - name: Make
         working-directory: ./build
         run: make -j$(nproc) WITHOUT_NVIDIA_LIBS=1 redist
+
+      - name: Disk usage
+        if: always()
+        run: |
+          df -h /
+          sudo du -sh . ~/.ccache /var/lib/docker 2>/dev/null || true
 
       - name: Save cache
         if: always()
