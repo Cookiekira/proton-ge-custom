@@ -125,7 +125,8 @@ jobs:
 
       - name: Version
         id: version
-        run: echo "name=$(git describe --long --tags)-wow64" >> "$GITHUB_OUTPUT"
+        # Ignore our own release tags (*-wow64), or names snowball off the previous release.
+        run: echo "name=$(git describe --long --tags --exclude '*-wow64')-wow64" >> "$GITHUB_OUTPUT"
 
       - name: Patch
         run: |
