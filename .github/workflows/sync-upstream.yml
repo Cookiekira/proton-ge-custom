@@ -1,6 +1,6 @@
 name: Sync upstream
 
-# Keeps master as a pure fast-forward mirror of upstream; this branch only holds this workflow.
+# Keeps master as a pure mirror of upstream (following force-pushes); this branch only holds this workflow.
 # When upstream has new commits, builds master here and publishes a GitHub release.
 # The build is trimmed by .github/scripts: 64-bit Unix side only (32-bit games run via WoW64),
 # no NVIDIA libraries, and no arm64-only submodules.
@@ -49,18 +49,25 @@ jobs:
           git remote add upstream "$UPSTREAM"
           git fetch upstream "$BRANCH" --tags --force
           before=$(git rev-parse HEAD)
-          git merge --ff-only "upstream/$BRANCH"
+          if git merge-base --is-ancestor HEAD "upstream/$BRANCH"; then
+            git merge --ff-only "upstream/$BRANCH"
+          else
+            # Upstream rewrote history; master is a mirror, so follow it.
+            echo "::warning::Upstream history was rewritten; resetting $BRANCH to upstream/$BRANCH (was $before)"
+            git reset --hard "upstream/$BRANCH"
+          fi
           after=$(git rev-parse HEAD)
           echo "sha=$after" >> "$GITHUB_OUTPUT"
           if [ "$before" != "$after" ]; then
-            git push origin "HEAD:$BRANCH"
+            git push --force-with-lease="$BRANCH:$before" origin "HEAD:$BRANCH"
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Synced $before -> $after" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Already up to date ($after)" >> "$GITHUB_STEP_SUMMARY"
           fi
-          git push origin --tags
+          # --force: upstream may move or recreate tags when it rewrites history.
+          git push origin --tags --force
 
 
   build:
