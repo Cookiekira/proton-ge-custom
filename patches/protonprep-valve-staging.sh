@@ -41,8 +41,11 @@ apply_all_in_dir() {
     apply_patch "../patches/dxvk/dxgi-auto-detect-hdr.patch"
     # StarCraft II: avoid GPU hangs with D3D9 constant buffer streaming on Navi 10 (#790, #845).
     apply_patch "../patches/dxvk/starcraft2-disable-constant-buffer-streaming-on-navi10.patch"
-    # Black Desert: the dxbc-spirv condition pass never finishes on some shaders (#1008).
-    apply_patch "../patches/dxvk/dxbc-spirv-cache-condition-pass-bool-evaluation.patch"
+    # Black Desert: the dxbc-spirv condition pass never finished on some shaders (#1008).
+    # Upstream dxbc-spirv commits from 2026-11-28 (22fcbd99, d8e95312, 6addd32d).
+    apply_patch "../patches/dxvk/dxbc-spirv-1-cache-results-of-boolean-evaluation.patch"
+    apply_patch "../patches/dxvk/dxbc-spirv-2-fix-missing-bool-case-in-makescalaroperand.patch"
+    apply_patch "../patches/dxvk/dxbc-spirv-3-optimize-certain-boolean-select-patterns.patch"
     popd
 
     pushd d7vk
@@ -64,7 +67,7 @@ apply_all_in_dir() {
     echo "VKD3D-PROTON: prevent stalled present waits from deadlocking swapchain teardown"
     echo "VKD3D-PROTON: don't map the parent process image for engine detection (EAC untrusted file, Star Citizen/Hunt)"
     echo "VKD3D-PROTON: clamp wave size for Silent Hill: Townfall (GPU hang on wave64-only AMD GPUs, #1014)"
-    echo "VKD3D-PROTON: dxbc-spirv: cache condition pass results (Black Desert shader compile hang, #1008)"
+    echo "VKD3D-PROTON: dxbc-spirv: upstream boolean evaluation cache and fixes from 2026-11-28 (Black Desert shader compile hang, #1008)"
     apply_all_in_dir "../patches/vkd3d-proton/"
     popd
 

@@ -1,0 +1,25 @@
+From d8e95312bf4d0a6226e95cfe514c8ca7d671d1a4 Mon Sep 17 00:00:00 2001
+From: Philip Rebohle <philip.rebohle@tu-dortmund.de>
+Date: Sat, 28 Nov 2026 13:18:54 +0100
+Subject: [PATCH] ir: Fix missing bool case in makeScalarOperand.
+
+Otherwise we may hit an assert if some optimizations are not executed
+in the expected order.
+
+(cherry picked from dxbc-spirv commit d8e95312bf)
+---
+ ir/passes/ir_pass_arithmetic.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/subprojects/dxbc-spirv/ir/passes/ir_pass_arithmetic.cpp b/subprojects/dxbc-spirv/ir/passes/ir_pass_arithmetic.cpp
+index dcd5533c..727256ae 100644
+--- a/subprojects/dxbc-spirv/ir/passes/ir_pass_arithmetic.cpp
++++ b/subprojects/dxbc-spirv/ir/passes/ir_pass_arithmetic.cpp
+@@ -5092,6 +5092,7 @@ Operand ArithmeticPass::makeScalarOperand(const Type& type, T value) {
+   dxbc_spv_assert(type.isBasicType());
+ 
+   switch (type.getBaseType(0u).getBaseType()) {
++    case ScalarType::eBool: return Operand(bool(value));
+     case ScalarType::eI8:   return Operand(int8_t(value));
+     case ScalarType::eU8:   return Operand(uint8_t(value));
+     case ScalarType::eI16:  return Operand(int16_t(value));

@@ -1,0 +1,53 @@
+From 6addd32d005b36d65d5450c1fb97ccc6e5af9707 Mon Sep 17 00:00:00 2001
+From: Philip Rebohle <philip.rebohle@tu-dortmund.de>
+Date: Sat, 28 Nov 2026 14:08:39 +0100
+Subject: [PATCH] ir: Optimize certain boolean select patterns.
+
+Avoids some redundant patterns that we can't otherwise optimize out.
+
+(cherry picked from dxbc-spirv commit 6addd32d005b36d65d5450c1fb97ccc6e5af9707)
+---
+ ir/passes/ir_pass_arithmetic.cpp | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/subprojects/dxbc-spirv/ir/passes/ir_pass_arithmetic.cpp b/subprojects/dxbc-spirv/ir/passes/ir_pass_arithmetic.cpp
+index 727256ae..0a5658cf 100644
+--- a/subprojects/dxbc-spirv/ir/passes/ir_pass_arithmetic.cpp
++++ b/subprojects/dxbc-spirv/ir/passes/ir_pass_arithmetic.cpp
+@@ -3454,6 +3454,36 @@ std::pair<bool, Builder::iterator> ArithmeticPass::resolveIdentitySelect(Builder
+     return std::make_pair(true, op);
+   }
+ 
++  /* select(cond, x || y, y) -> select(cond, x, false) || y
++   * select(cond, y, x || y) -> select(cond, false, x) || y
++   * select(cond, x && y, y) -> select(cond, x, true) && y
++   * select(cond, y, x && y) -> select(cond, true, x) && y */
++  if (op->getType().getBaseType(0u).isBoolType()) {
++    for (uint32_t i = 0u; i < 2u; i++) {
++      const auto& x = m_builder.getOpForOperand(*op, 1u + (i ^ 0u));
++      const auto& y = m_builder.getOpForOperand(*op, 1u + (i ^ 1u));
++
++      if (x.getOpCode() == OpCode::eBOr || x.getOpCode() == OpCode::eBAnd) {
++        const auto& x0 = m_builder.getOpForOperand(x, 0u);
++        const auto& x1 = m_builder.getOpForOperand(x, 1u);
++
++        if (x0.getDef() != y.getDef() && x1.getDef() != y.getDef())
++          continue;
++
++        const auto& xUnique = x0.getDef() == y.getDef() ? x1 : x0;
++
++        auto newSelect = m_builder.addBefore(op->getDef(), Op(*op)
++          .setOperand(1u + (i ^ 0u), xUnique.getDef())
++          .setOperand(1u + (i ^ 1u), m_builder.makeConstant(x.getOpCode() == OpCode::eBAnd)));
++
++        m_builder.rewriteOp(op->getDef(), Op(x.getOpCode(), ScalarType::eBool)
++          .addOperand(newSelect)
++          .addOperand(y.getDef()));
++        return std::make_pair(true, m_builder.iter(newSelect));
++      }
++    }
++  }
++
+   /* boolean select(cond, a, b) -> (cond && a) || (!cond && b) */
+   if (op->getType().getBaseType(0u).isBoolType()) {
+     auto tDef = m_builder.addBefore(op->getDef(), Op::BAnd(op->getType(), cond.getDef(), a.getDef()));
