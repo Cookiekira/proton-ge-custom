@@ -11,6 +11,11 @@ https://github.com/ValveSoftware/Proton/issues
 
 THE GE-PROTON ISSUE TRACKER IS FOR ISSUES THAT ONLY OCCUR ON GE-PROTON BUT WORK PROPERLY UPSTREAM, OR FOR FEATURES THAT ARE ONLY SPECIFIC TO GE-PROTON SUCH AS WINE-WAYLAND.
 
+# IF USING AI:
+1. Complete this template
+2. Explain the issue in simple terms and provide a reproducer and debugging approach
+3. Make sure that the supposed reproducer actually reproduces the problem.
+
 # Compatibility Report
 - Name of the game with compatibility issues:
 - Steam AppID of the game:
